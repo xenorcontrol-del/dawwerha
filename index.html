@@ -1,129 +1,502 @@
-<script>
-const URL="https://okqirqqstwvdrdezwomu.supabase.co";
-const KEY="sb_publishable_n1uW2Z_nzOkvSMs5GEZo0w_0ras0N7r";
-let db=null,currentUser=null,categories=[];
 
-function msg(id,t){
- const e=document.getElementById(id);
- if(e)e.textContent=t;
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="theme-color" content="#123b32">
+<meta name="description" content="دَوّرها - ابحث عن أدوات ومعدات للإيجار بالقرب منك">
+<title>دَوّرها | تأجير الأدوات والمعدات</title>
+
+<style>
+:root {
+  --green:#123b32;
+  --mint:#e8f2ed;
+  --ink:#17231f;
+  --muted:#68756f;
+  --line:#dce5df;
+  --orange:#f0a43a;
 }
-function show(id){
- document.querySelectorAll("#auth,#add").forEach(x=>x.classList.add("hidden"));
- if(id)document.getElementById(id).classList.remove("hidden");
+* { box-sizing:border-box; }
+body {
+  margin:0;
+  background:#f7f9f7;
+  color:var(--ink);
+  font-family:system-ui,-apple-system,"Segoe UI",sans-serif;
+  line-height:1.6;
 }
-function safe(v){
- return String(v??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+header {
+  background:var(--green);
+  color:white;
+  padding:16px max(20px,calc((100% - 1080px)/2));
+  display:flex;
+  align-items:center;
+  justify-content:space-between;
+  gap:14px;
+  flex-wrap:wrap;
 }
-async function connect(){
- if(db)return db;
- if(!window.supabase?.createClient){
-  await new Promise((resolve,reject)=>{
-   const s=document.createElement("script");
-   s.src="https://unpkg.com/@supabase/supabase-js@2";
-   s.onload=resolve;
-   s.onerror=()=>reject(new Error("تعذر تحميل مكتبة الاتصال. تحقق من الإنترنت."));
-   document.head.appendChild(s);
-  });
- }
- if(!window.supabase?.createClient)throw new Error("مكتبة الاتصال غير متاحة.");
- db=window.supabase.createClient(URL,KEY);
- return db;
+.logo { font-size:25px; font-weight:900; }
+.nav { display:flex; gap:9px; flex-wrap:wrap; }
+button {
+  font:inherit;
+  cursor:pointer;
+  border:0;
+  border-radius:11px;
+  padding:10px 16px;
+  font-weight:700;
+  background:var(--green);
+  color:white;
 }
-async function init(){
- try{
-  msg("status","جاري الاتصال وتحميل الإعلانات...");
-  await connect();
-  const s=await db.auth.getSession();
-  if(s.error)throw s.error;
-  currentUser=s.data.session?.user||null;
-  const c=await db.from("categories").select("id,name").eq("is_active",true).order("sort_order");
-  if(c.error)throw c.error;
-  categories=c.data||[];
-  document.getElementById("category").innerHTML=categories.map(x=>`<option value="${safe(x.id)}">${safe(x.name)}</option>`).join("");
-  await loadListings();
- }catch(e){
-  msg("status","تعذر تشغيل التطبيق: "+e.message);
- }
+button.secondary {
+  background:white;
+  color:var(--green);
+  border:1px solid var(--line);
 }
-async function signup(){
- const email=document.getElementById("email").value.trim();
- const password=document.getElementById("password").value;
- if(!email||!password){msg("authmsg","اكتب البريد وكلمة المرور.");return}
- if(password.length<6){msg("authmsg","كلمة المرور 6 أحرف على الأقل.");return}
- msg("authmsg","جاري إنشاء الحساب...");
- try{
-  await connect();
-  const r=await db.auth.signUp({email,password});
-  if(r.error)throw r.error;
-  msg("authmsg",r.data.session?"تم إنشاء الحساب بنجاح.":"تم إرسال رسالة تأكيد إلى بريدك الإلكتروني.");
- }catch(e){msg("authmsg","فشل إنشاء الحساب: "+e.message)}
+button.accent {
+  background:var(--orange);
+  color:#241b0d;
 }
-async function login(){
- const email=document.getElementById("email").value.trim();
- const password=document.getElementById("password").value;
- if(!email||!password){msg("authmsg","اكتب البريد وكلمة المرور.");return}
- msg("authmsg","جاري تسجيل الدخول...");
- try{
-  await connect();
-  const r=await db.auth.signInWithPassword({email,password});
-  if(r.error)throw r.error;
-  currentUser=r.data.user;
-  const p=await db.from("profiles").upsert(
-   {id:currentUser.id,role:"customer"},
-   {onConflict:"id",ignoreDuplicates:true}
-  );
-  if(p.error)throw p.error;
-  msg("authmsg","تم تسجيل الدخول بنجاح.");
-  show("");
- }catch(e){msg("authmsg","تعذر تسجيل الدخول: "+e.message)}
+main {
+  max-width:1080px;
+  margin:auto;
+  padding:26px 18px 60px;
 }
-async function loadListings(){
- msg("status","جاري تحميل الإعلانات...");
- try{
-  await connect();
-  const q=document.getElementById("search").value.trim();
-  let request=db.from("listings")
-   .select("id,title,city,daily_price,description,categories(name)")
-   .eq("status","published").eq("available",true)
-   .order("created_at",{ascending:false});
-  if(q)request=request.or(`title.ilike.%${q}%,city.ilike.%${q}%`);
-  const r=await request;
-  if(r.error)throw r.error;
-  const items=r.data||[];
-  msg("status",`عدد الإعلانات المتاحة: ${items.length}`);
-  document.getElementById("listings").innerHTML=items.length?items.map(x=>`
-   <article class="card">
-    <div style="font-size:38px">🧰</div>
-    <h3>${safe(x.title)}</h3>
-    <p class="muted">${safe(x.categories?.name||"معدات")} · ${safe(x.city||"")}</p>
-    <p class="price">${Number(x.daily_price).toLocaleString("ar-EG")} جنيه / يوم</p>
-    <p>${safe(x.description||"")}</p>
-   </article>`).join(""):"<p>لا توجد إعلانات منشورة حاليًا.</p>";
- }catch(e){
-  msg("status","فشل تحميل الإعلانات: "+e.message);
- }
+.hero {
+  background:var(--mint);
+  padding:34px 26px;
+  border-radius:22px;
+  margin:10px 0 24px;
 }
-async function addListing(){
- if(!currentUser){show("auth");msg("addmsg","سجّل الدخول أولًا.");return}
- const title=document.getElementById("title").value.trim();
- const daily=Number(document.getElementById("price").value);
- if(!title||daily<=0){msg("addmsg","أدخل اسم المعدّة وسعرًا صحيحًا.");return}
- msg("addmsg","جاري إرسال الإعلان...");
- try{
-  await connect();
-  const r=await db.from("listings").insert({
-   owner_id:currentUser.id,
-   category_id:document.getElementById("category").value||null,
-   title,
-   city:document.getElementById("city").value.trim(),
-   daily_price:daily,
-   deposit:Number(document.getElementById("deposit").value)||0,
-   description:document.getElementById("description").value.trim(),
-   condition:"good"
-  });
-  if(r.error)throw r.error;
-  msg("addmsg","تم إرسال إعلانك للمراجعة بنجاح.");
- }catch(e){msg("addmsg","فشل إرسال الإعلان: "+e.message)}
+h1 {
+  font-size:clamp(27px,5vw,42px);
+  line-height:1.25;
+  margin:0 0 10px;
 }
+.hero p { margin:0 0 20px; color:#46574f; }
+.search {
+  display:flex;
+  gap:9px;
+  max-width:720px;
+}
+.search input { flex:1; min-width:0; }
+input,select,textarea {
+  width:100%;
+  padding:12px;
+  border:1px solid var(--line);
+  border-radius:10px;
+  background:white;
+  font:inherit;
+  color:var(--ink);
+  margin:5px 0 12px;
+}
+h2 { font-size:23px; margin:24px 0 12px; }
+.muted { color:var(--muted); }
+#status {
+  padding:10px 12px;
+  background:white;
+  border:1px solid var(--line);
+  border-radius:10px;
+  color:var(--muted);
+  margin:14px 0;
+}
+.grid {
+  display:grid;
+  grid-template-columns:repeat(auto-fit,minmax(230px,1fr));
+  gap:14px;
+}
+.card,.panel {
+  background:white;
+  border:1px solid var(--line);
+  border-radius:15px;
+  padding:17px;
+}
+.card h3 { margin:5px 0; }
+.price {
+  font-weight:800;
+  color:var(--green);
+  font-size:18px;
+}
+.hidden { display:none!important; }
+.panel { margin-top:18px; max-width:560px; }
+.actions { display:flex; gap:8px; flex-wrap:wrap; }
+.fieldrow {
+  display:grid;
+  grid-template-columns:1fr 1fr;
+  gap:10px;
+}
+footer {
+  text-align:center;
+  padding:24px;
+  color:var(--muted);
+  border-top:1px solid var(--line);
+}
+@media(max-width:560px) {
+  .search { flex-direction:column; }
+  .fieldrow { grid-template-columns:1fr; }
+  header { padding:14px 18px; }
+  .hero { padding:25px 18px; }
+}
+</style>
+</head>
+
+<body>
+
+<header>
+  <div class="logo">دَوّرها 🧰</div>
+  <nav class="nav">
+    <button class="secondary" onclick="show('auth')">
+      دخول / إنشاء حساب
+    </button>
+    <button class="accent" onclick="show('add')">
+      أضف معدّتك
+    </button>
+  </nav>
+</header>
+
+<main>
+
+<section class="hero">
+  <h1>المعدّة اللي محتاجها… هتلاقيها</h1>
+  <p>ابحث عن أدوات ومعدات للإيجار بالقرب منك.</p>
+
+  <div class="search">
+    <input id="search" type="search"
+      placeholder="ابحث باسم المعدّة أو المدينة"
+      onkeydown="if(event.key==='Enter')loadListings()">
+    <button onclick="loadListings()">ابحث</button>
+  </div>
+</section>
+
+<div id="status" role="status" aria-live="polite">
+  جاري تجهيز دَوّرها...
+</div>
+
+<section>
+  <h2>المعدات المتاحة للإيجار</h2>
+  <div id="listings" class="grid">
+    <p>جاري تحميل الإعلانات...</p>
+  </div>
+</section>
+
+<section id="auth" class="panel hidden">
+  <div class="actions" style="justify-content:space-between">
+    <h2 style="margin:0">حسابك في دَوّرها</h2>
+    <button class="secondary" onclick="show('')">إغلاق</button>
+  </div>
+
+  <label for="email">البريد الإلكتروني</label>
+  <input id="email" type="email" autocomplete="email"
+    placeholder="name@example.com">
+
+  <label for="password">كلمة المرور</label>
+  <input id="password" type="password"
+    autocomplete="current-password"
+    placeholder="6 أحرف على الأقل">
+
+  <div class="actions">
+    <button onclick="login()">دخول</button>
+    <button class="secondary" onclick="signup()">إنشاء حساب</button>
+  </div>
+
+  <p id="authmsg" class="muted" aria-live="polite"></p>
+</section>
+
+<section id="add" class="panel hidden">
+  <div class="actions" style="justify-content:space-between">
+    <h2 style="margin:0">أضف معدّتك للإيجار</h2>
+    <button class="secondary" onclick="show('')">إغلاق</button>
+  </div>
+
+  <label for="title">اسم المعدّة</label>
+  <input id="title" placeholder="مثال: شنيور كهربائي">
+
+  <div class="fieldrow">
+    <div>
+      <label for="category">التصنيف</label>
+      <select id="category">
+        <option value="">اختر التصنيف</option>
+      </select>
+    </div>
+    <div>
+      <label for="city">المدينة</label>
+      <input id="city" placeholder="مثال: القاهرة">
+    </div>
+  </div>
+
+  <div class="fieldrow">
+    <div>
+      <label for="price">سعر الإيجار اليومي (جنيه)</label>
+      <input id="price" type="number" min="1" placeholder="200">
+    </div>
+    <div>
+      <label for="deposit">التأمين (جنيه)</label>
+      <input id="deposit" type="number" min="0" placeholder="0">
+    </div>
+  </div>
+
+  <label for="description">وصف المعدّة</label>
+  <textarea id="description" rows="3"
+    placeholder="الحالة والمواصفات..."></textarea>
+
+  <button onclick="addListing()">إرسال الإعلان</button>
+  <p id="addmsg" class="muted" aria-live="polite"></p>
+</section>
+
+</main>
+
+<footer>
+  دَوّرها — سوق تأجير الأدوات والمعدات
+</footer>
+
+<script>
+const URL = "https://okqirqqstwvdrdezwomu.supabase.co";
+const KEY = "sb_publishable_n1uW2Z_nzOkvSMs5GEZo0w_0ras0N7r";
+
+let db = null;
+let currentUser = null;
+let categories = [];
+
+function msg(id, text) {
+  const element = document.getElementById(id);
+  if (element) element.textContent = text;
+}
+
+function show(id) {
+  document.querySelectorAll("#auth,#add")
+    .forEach(element => element.classList.add("hidden"));
+
+  if (id) document.getElementById(id).classList.remove("hidden");
+}
+
+function safe(value) {
+  return String(value ?? "").replace(/[&<>"']/g, character => ({
+    "&":"&amp;",
+    "<":"&lt;",
+    ">":"&gt;",
+    '"':"&quot;",
+    "'":"&#39;"
+  }[character]));
+}
+
+async function connect() {
+  if (db) return db;
+
+  if (!window.supabase?.createClient) {
+    await new Promise((resolve, reject) => {
+      const script = document.createElement("script");
+      script.src = "https://unpkg.com/@supabase/supabase-js@2";
+      script.onload = resolve;
+      script.onerror = () =>
+        reject(new Error("تعذر تحميل مكتبة الاتصال. تحقق من الإنترنت."));
+      document.head.appendChild(script);
+    });
+  }
+
+  if (!window.supabase?.createClient) {
+    throw new Error("مكتبة الاتصال غير متاحة.");
+  }
+
+  db = window.supabase.createClient(URL, KEY);
+  return db;
+}
+
+async function init() {
+  try {
+    msg("status", "جاري الاتصال وتحميل الإعلانات...");
+
+    await connect();
+
+    const session = await db.auth.getSession();
+    if (session.error) throw session.error;
+
+    currentUser = session.data.session?.user || null;
+
+    const result = await db.from("categories")
+      .select("id,name")
+      .eq("is_active", true)
+      .order("sort_order");
+
+    if (result.error) throw result.error;
+
+    categories = result.data || [];
+
+    document.getElementById("category").innerHTML =
+      categories.map(item =>
+        `<option value="${safe(item.id)}">${safe(item.name)}</option>`
+      ).join("");
+
+    await loadListings();
+
+  } catch (error) {
+    msg("status", "تعذر تشغيل التطبيق: " + error.message);
+  }
+}
+
+async function signup() {
+  const email = document.getElementById("email").value.trim();
+  const password = document.getElementById("password").value;
+
+  if (!email || !password) {
+    msg("authmsg", "اكتب البريد وكلمة المرور.");
+    return;
+  }
+
+  if (password.length < 6) {
+    msg("authmsg", "كلمة المرور 6 أحرف على الأقل.");
+    return;
+  }
+
+  msg("authmsg", "جاري إنشاء الحساب...");
+
+  try {
+    await connect();
+
+    const result = await db.auth.signUp({ email, password });
+    if (result.error) throw result.error;
+
+    msg(
+      "authmsg",
+      result.data.session
+        ? "تم إنشاء الحساب بنجاح."
+        : "تم إرسال رسالة تأكيد إلى بريدك الإلكتروني."
+    );
+
+  } catch (error) {
+    msg("authmsg", "فشل إنشاء الحساب: " + error.message);
+  }
+}
+
+async function login() {
+  const email = document.getElementById("email").value.trim();
+  const password = document.getElementById("password").value;
+
+  if (!email || !password) {
+    msg("authmsg", "اكتب البريد وكلمة المرور.");
+    return;
+  }
+
+  msg("authmsg", "جاري تسجيل الدخول...");
+
+  try {
+    await connect();
+
+    const result = await db.auth.signInWithPassword({
+      email,
+      password
+    });
+
+    if (result.error) throw result.error;
+
+    currentUser = result.data.user;
+
+    const profile = await db.from("profiles").upsert(
+      { id: currentUser.id, role: "customer" },
+      { onConflict: "id", ignoreDuplicates: true }
+    );
+
+    if (profile.error) throw profile.error;
+
+    msg("authmsg", "تم تسجيل الدخول بنجاح.");
+    show("");
+
+  } catch (error) {
+    msg("authmsg", "تعذر تسجيل الدخول: " + error.message);
+  }
+}
+
+async function loadListings() {
+  msg("status", "جاري تحميل الإعلانات...");
+
+  try {
+    await connect();
+
+    const query = document.getElementById("search").value.trim();
+
+    let request = db.from("listings")
+      .select("id,title,city,daily_price,description,categories(name)")
+      .eq("status", "published")
+      .eq("available", true)
+      .order("created_at", { ascending: false });
+
+    if (query) {
+      request = request.or(
+        `title.ilike.%${query}%,city.ilike.%${query}%`
+      );
+    }
+
+    const result = await request;
+    if (result.error) throw result.error;
+
+    const items = result.data || [];
+
+    msg("status", `عدد الإعلانات المتاحة: ${items.length}`);
+
+    document.getElementById("listings").innerHTML =
+      items.length
+        ? items.map(item => `
+          <article class="card">
+            <div style="font-size:38px">🧰</div>
+            <h3>${safe(item.title)}</h3>
+            <p class="muted">
+              ${safe(item.categories?.name || "معدات")}
+              · ${safe(item.city || "")}
+            </p>
+            <p class="price">
+              ${Number(item.daily_price).toLocaleString("ar-EG")}
+              جنيه / يوم
+            </p>
+            <p>${safe(item.description || "")}</p>
+          </article>
+        `).join("")
+        : "<p>لا توجد إعلانات منشورة حاليًا.</p>";
+
+  } catch (error) {
+    msg("status", "فشل تحميل الإعلانات: " + error.message);
+  }
+}
+
+async function addListing() {
+  if (!currentUser) {
+    show("auth");
+    msg("addmsg", "سجّل الدخول أولًا.");
+    return;
+  }
+
+  const title = document.getElementById("title").value.trim();
+  const daily = Number(document.getElementById("price").value);
+
+  if (!title || daily <= 0) {
+    msg("addmsg", "أدخل اسم المعدّة وسعرًا صحيحًا.");
+    return;
+  }
+
+  msg("addmsg", "جاري إرسال الإعلان...");
+
+  try {
+    await connect();
+
+    const result = await db.from("listings").insert({
+      owner_id: currentUser.id,
+      category_id: document.getElementById("category").value || null,
+      title,
+      city: document.getElementById("city").value.trim(),
+      daily_price: daily,
+      deposit: Number(document.getElementById("deposit").value) || 0,
+      description: document.getElementById("description").value.trim(),
+      condition: "good"
+    });
+
+    if (result.error) throw result.error;
+
+    msg("addmsg", "تم إرسال إعلانك للمراجعة بنجاح.");
+
+  } catch (error) {
+    msg("addmsg", "فشل إرسال الإعلان: " + error.message);
+  }
+}
+
 init();
 </script>
+
+</body>
+</html>
