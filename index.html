@@ -1,129 +1,129 @@
-
-<!DOCTYPE html>
-<html lang="ar" dir="rtl">
-<head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
-<meta name="theme-color" content="#101b35">
-<title>دَوّرها | تأجير المعدات</title>
-<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-<style>
-*{box-sizing:border-box}body{margin:0;background:#f3f5f9;color:#172033;font-family:Arial,sans-serif}
-header{background:#101b35;color:white;padding:20px;display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap}
-.logo{font-size:28px;font-weight:bold}.logo span{color:#ff8a27}
-main{max-width:950px;margin:auto;padding:20px}
-.hero,.panel,.card{background:white;padding:20px;border-radius:16px;margin-bottom:16px}
-.hero{background:#1b2b4b;color:white}.hero h1{font-size:30px}
-input,select,textarea{width:100%;padding:12px;border:1px solid #ddd;border-radius:9px;margin:6px 0;font-size:16px}
-button{padding:12px 17px;border:0;border-radius:9px;background:#ff8a27;font-weight:bold;cursor:pointer;margin:4px}
-.secondary{background:#e8edf5}.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:12px}
-.price{color:#d76a12;font-size:20px;font-weight:bold}.muted{color:#687386}
-.hidden{display:none}.row{display:flex;gap:8px;flex-wrap:wrap}
-</style>
-</head>
-<body>
-<header>
- <div><div class="logo">دَوّر<span>ها</span></div><small>سوق تأجير الأدوات والمعدات في مصر</small></div>
- <div><button class="secondary" onclick="show('auth')">دخول / حساب جديد</button><button onclick="show('add')">أضف معدّة</button></div>
-</header>
-<main>
- <section class="hero">
-  <h1>المعدّة اللي محتاجها… هتلاقيها</h1>
-  <p>ابحث عن أدوات ومعدات للإيجار بالقرب منك.</p>
-  <input id="search" placeholder="ابحث عن معدّة أو مدينة">
-  <button onclick="loadListings()">ابحث</button>
- </section>
- <section id="auth" class="panel hidden">
-  <h2>حسابك في دَوّرها</h2>
-  <input id="email" type="email" placeholder="البريد الإلكتروني">
-  <input id="password" type="password" placeholder="كلمة المرور">
-  <div class="row">
-   <button onclick="login()">دخول</button>
-   <button onclick="signup()">إنشاء حساب</button>
-   <button class="secondary" onclick="show('')">إغلاق</button>
-  </div>
-  <p id="authmsg"></p>
- </section>
- <section id="add" class="panel hidden">
-  <h2>إضافة معدّة</h2>
-  <input id="title" placeholder="اسم المعدّة">
-  <select id="category"></select>
-  <input id="city" placeholder="المدينة">
-  <input id="price" type="number" placeholder="السعر اليومي بالجنيه">
-  <input id="deposit" type="number" placeholder="التأمين بالجنيه">
-  <textarea id="description" placeholder="وصف المعدّة"></textarea>
-  <button onclick="addListing()">إرسال الإعلان للمراجعة</button>
-  <button class="secondary" onclick="show('')">إغلاق</button>
-  <p id="addmsg"></p>
- </section>
- <h2>المعدات المتاحة</h2>
- <p id="status" class="muted">جاري تحميل الإعلانات...</p>
- <section id="listings" class="grid"></section>
-</main>
 <script>
 const URL="https://okqirqqstwvdrdezwomu.supabase.co";
 const KEY="sb_publishable_n1uW2Z_nzOkvSMs5GEZo0w_0ras0N7r";
-const db=window.supabase.createClient(URL,KEY);
-let currentUser=null,categories=[];
+let db=null,currentUser=null,categories=[];
+
+function msg(id,t){
+ const e=document.getElementById(id);
+ if(e)e.textContent=t;
+}
 function show(id){
  document.querySelectorAll("#auth,#add").forEach(x=>x.classList.add("hidden"));
  if(id)document.getElementById(id).classList.remove("hidden");
 }
+function safe(v){
+ return String(v??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+}
+async function connect(){
+ if(db)return db;
+ if(!window.supabase?.createClient){
+  await new Promise((resolve,reject)=>{
+   const s=document.createElement("script");
+   s.src="https://unpkg.com/@supabase/supabase-js@2";
+   s.onload=resolve;
+   s.onerror=()=>reject(new Error("تعذر تحميل مكتبة الاتصال. تحقق من الإنترنت."));
+   document.head.appendChild(s);
+  });
+ }
+ if(!window.supabase?.createClient)throw new Error("مكتبة الاتصال غير متاحة.");
+ db=window.supabase.createClient(URL,KEY);
+ return db;
+}
 async function init(){
- const session=await db.auth.getSession();
- currentUser=session.data.session?.user||null;
- const c=await db.from("categories").select("id,name").eq("is_active",true).order("sort_order");
- categories=c.data||[];
- document.getElementById("category").innerHTML=categories.map(x=>`<option value="${x.id}">${x.name}</option>`).join("");
- await loadListings();
+ try{
+  msg("status","جاري الاتصال وتحميل الإعلانات...");
+  await connect();
+  const s=await db.auth.getSession();
+  if(s.error)throw s.error;
+  currentUser=s.data.session?.user||null;
+  const c=await db.from("categories").select("id,name").eq("is_active",true).order("sort_order");
+  if(c.error)throw c.error;
+  categories=c.data||[];
+  document.getElementById("category").innerHTML=categories.map(x=>`<option value="${safe(x.id)}">${safe(x.name)}</option>`).join("");
+  await loadListings();
+ }catch(e){
+  msg("status","تعذر تشغيل التطبيق: "+e.message);
+ }
 }
 async function signup(){
- const email=document.getElementById("email").value;
+ const email=document.getElementById("email").value.trim();
  const password=document.getElementById("password").value;
- const r=await db.auth.signUp({email,password});
- document.getElementById("authmsg").textContent=r.error?r.error.message:"تم إنشاء الحساب. راجع بريدك لتأكيده ثم سجّل الدخول.";
+ if(!email||!password){msg("authmsg","اكتب البريد وكلمة المرور.");return}
+ if(password.length<6){msg("authmsg","كلمة المرور 6 أحرف على الأقل.");return}
+ msg("authmsg","جاري إنشاء الحساب...");
+ try{
+  await connect();
+  const r=await db.auth.signUp({email,password});
+  if(r.error)throw r.error;
+  msg("authmsg",r.data.session?"تم إنشاء الحساب بنجاح.":"تم إرسال رسالة تأكيد إلى بريدك الإلكتروني.");
+ }catch(e){msg("authmsg","فشل إنشاء الحساب: "+e.message)}
 }
 async function login(){
- const email=document.getElementById("email").value;
+ const email=document.getElementById("email").value.trim();
  const password=document.getElementById("password").value;
- const r=await db.auth.signInWithPassword({email,password});
- if(r.error){document.getElementById("authmsg").textContent=r.error.message;return}
- currentUser=r.data.user;
- await db.from("profiles").upsert({id:currentUser.id,role:"customer"},{onConflict:"id",ignoreDuplicates:true});
- document.getElementById("authmsg").textContent="تم تسجيل الدخول بنجاح";
- show("");
+ if(!email||!password){msg("authmsg","اكتب البريد وكلمة المرور.");return}
+ msg("authmsg","جاري تسجيل الدخول...");
+ try{
+  await connect();
+  const r=await db.auth.signInWithPassword({email,password});
+  if(r.error)throw r.error;
+  currentUser=r.data.user;
+  const p=await db.from("profiles").upsert(
+   {id:currentUser.id,role:"customer"},
+   {onConflict:"id",ignoreDuplicates:true}
+  );
+  if(p.error)throw p.error;
+  msg("authmsg","تم تسجيل الدخول بنجاح.");
+  show("");
+ }catch(e){msg("authmsg","تعذر تسجيل الدخول: "+e.message)}
 }
 async function loadListings(){
- const q=document.getElementById("search").value.trim();
- let request=db.from("listings").select("id,title,city,daily_price,description,categories(name)").eq("status","published").eq("available",true).order("created_at",{ascending:false});
- if(q)request=request.or(`title.ilike.%${q}%,city.ilike.%${q}%`);
- const r=await request;
- if(r.error){document.getElementById("status").textContent="تعذر تحميل الإعلانات: "+r.error.message;return}
- const items=r.data||[];
- document.getElementById("status").textContent=`عدد الإعلانات المتاحة: ${items.length}`;
- document.getElementById("listings").innerHTML=items.length?items.map(x=>`
- <article class="card"><div style="font-size:38px">🧰</div>
- <h3>${safe(x.title)}</h3><p class="muted">${safe(x.categories?.name||"معدات")} · ${safe(x.city||"")}</p>
- <p class="price">${Number(x.daily_price).toLocaleString("ar-EG")} جنيه / يوم</p>
- <p>${safe(x.description||"")}</p></article>`).join(""):"<p>لا توجد إعلانات منشورة حاليًا.</p>";
+ msg("status","جاري تحميل الإعلانات...");
+ try{
+  await connect();
+  const q=document.getElementById("search").value.trim();
+  let request=db.from("listings")
+   .select("id,title,city,daily_price,description,categories(name)")
+   .eq("status","published").eq("available",true)
+   .order("created_at",{ascending:false});
+  if(q)request=request.or(`title.ilike.%${q}%,city.ilike.%${q}%`);
+  const r=await request;
+  if(r.error)throw r.error;
+  const items=r.data||[];
+  msg("status",`عدد الإعلانات المتاحة: ${items.length}`);
+  document.getElementById("listings").innerHTML=items.length?items.map(x=>`
+   <article class="card">
+    <div style="font-size:38px">🧰</div>
+    <h3>${safe(x.title)}</h3>
+    <p class="muted">${safe(x.categories?.name||"معدات")} · ${safe(x.city||"")}</p>
+    <p class="price">${Number(x.daily_price).toLocaleString("ar-EG")} جنيه / يوم</p>
+    <p>${safe(x.description||"")}</p>
+   </article>`).join(""):"<p>لا توجد إعلانات منشورة حاليًا.</p>";
+ }catch(e){
+  msg("status","فشل تحميل الإعلانات: "+e.message);
+ }
 }
-function safe(v){return String(v??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));}
 async function addListing(){
- if(!currentUser){show("auth");document.getElementById("addmsg").textContent="سجّل الدخول أولًا.";return}
+ if(!currentUser){show("auth");msg("addmsg","سجّل الدخول أولًا.");return}
  const title=document.getElementById("title").value.trim();
  const daily=Number(document.getElementById("price").value);
- if(!title||daily<=0){document.getElementById("addmsg").textContent="أدخل اسم المعدّة وسعرًا صحيحًا.";return}
- const r=await db.from("listings").insert({
-  owner_id:currentUser.id,category_id:document.getElementById("category").value,
-  title,city:document.getElementById("city").value,
-  daily_price:daily,deposit:Number(document.getElementById("deposit").value)||0,
-  description:document.getElementById("description").value,
-  condition:"good"
- });
- document.getElementById("addmsg").textContent=r.error?r.error.message:"تم إرسال إعلانك للمراجعة بنجاح.";
- if(!r.error)show("");
+ if(!title||daily<=0){msg("addmsg","أدخل اسم المعدّة وسعرًا صحيحًا.");return}
+ msg("addmsg","جاري إرسال الإعلان...");
+ try{
+  await connect();
+  const r=await db.from("listings").insert({
+   owner_id:currentUser.id,
+   category_id:document.getElementById("category").value||null,
+   title,
+   city:document.getElementById("city").value.trim(),
+   daily_price:daily,
+   deposit:Number(document.getElementById("deposit").value)||0,
+   description:document.getElementById("description").value.trim(),
+   condition:"good"
+  });
+  if(r.error)throw r.error;
+  msg("addmsg","تم إرسال إعلانك للمراجعة بنجاح.");
+ }catch(e){msg("addmsg","فشل إرسال الإعلان: "+e.message)}
 }
 init();
 </script>
-</body>
-</html>
